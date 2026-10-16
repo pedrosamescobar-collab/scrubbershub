@@ -1,0 +1,51 @@
+name: Verify ScrubHub production build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/verify-scrubhub.yml
+      - public/**
+      - src/**
+      - vite.config.ts
+      - package.json
+      - package-lock.json
+      - netlify.toml
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Verify marketing files, routing, and app build output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/index.html
+          test -s dist/_redirects
+          test -s dist/site/index.html
+          test -s dist/site/features.html
+          test -s dist/site/pricing.html
+          test -s dist/site/industries.html
+          test -s dist/site/contact.html
+          test -s dist/site/thanks.html
+          test -s dist/site/privacy.html
+          test -s dist/site/terms.html
+          test -s dist/site/site.css
+          test -s dist/site/site.js
+          test -s dist/robots.txt
+          test -s dist/sitemap.xml
+          grep -q '^/ ' dist/_redirects
+          grep -q '/\* * /index.html' dist/_redirects
+          echo 'ScrubHub application and marketing pages bundled successfully.'
