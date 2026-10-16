@@ -1,0 +1,87 @@
+name: Install ScrubHub marketing website
+
+# One-time integration. Subsequent changes to public/ won't re-run this workflow.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/install-scrubhub-marketing.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install marketing pages and preserve app routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          unzip -q scrubhub-website.zip -d "$RUNNER_TEMP/scrubhub-site"
+          python3 - <<'PY'
+          import pathlib
+          import re
+          import shutil
+
+          src = pathlib.Path("/tmp")  # replaced with RUNNER_TEMP below
+          import os
+          src = pathlib.Path(os.environ["RUNNER_TEMP"]) / "scrubhub-site" / "public"
+          dest = pathlib.Path("public")
+          if not (src / "site" / "index.html").is_file():
+              raise SystemExit("Marketing archive missing public/site/index.html")
+          shutil.copytree(src / "site", dest / "site", dirs_exist_ok=True)
+          for filename in ("robots.txt", "sitemap.xml"):
+              shutil.copy2(src / filename, dest / filename)
+
+          # Netlify parses the marketing rewrites before the existing SPA fallback.
+          existing = (dest / "_redirects").read_text() if (dest / "_redirects").exists() else ""
+          incoming = (src / "_redirects").read_text()
+          begin = "# ---- ScrubHub marketing site"
+          end = "# ---- end marketing site ----"
+          if begin not in incoming or end not in incoming:
+              raise SystemExit("Marketing redirect markers missing")
+          prefix = incoming[: incoming.index(end) + len(end)]
+          existing = re.sub(re.escape(begin) + r".*?" + re.escape(end) + r"\s*", "", existing, flags=re.S).strip()
+          if not existing:
+              existing = "/*             /index.html            200"
+          (dest / "_redirects").write_text(prefix + "\n\n" + existing + "\n")
+
+          # Workbox would otherwise serve cached app index.html for / and /pricing.
+          # Exclude marketing routes from its SPA navigation fallback so that
+          # the deployed HTML and SEO content render consistently.
+          config = pathlib.Path("vite.config.ts")
+          text = config.read_text()
+          if "navigateFallbackDenylist" not in text:
+              needle = "navigateFallback: '/index.html',"
+              if needle not in text:
+                  raise SystemExit("Unexpected PWA config; refusing to rewrite")
+              replacement = r"""navigateFallback: '/index.html',
+                  // Marketing pages are separate static documents, not React app routes.
+                  navigateFallbackDenylist: [
+                    /^\/$/,
+                    /^\/(features|pricing|industries|contact|thanks|terms|privacy)(\/|$)/,
+                    /^\/site(\/|$)/,
+                  ],"""
+              text = text.replace(needle, replacement)
+              config.write_text(text)
+
+          for name in ("index", "features", "pricing", "industries", "contact", "thanks", "terms", "privacy"):
+              assert (dest / "site" / (name + ".html")).is_file(), name
+          print("Installed eight marketing pages with safe Netlify/PWA routing.")
+          PY
+
+      - name: Commit integrated website
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/_redirects public/robots.txt public/sitemap.xml public/site vite.config.ts
+          if ! git diff --cached --quiet; then
+            git commit -m "feat: integrate ScrubHub marketing site with existing app"
+            git push
+          fi
