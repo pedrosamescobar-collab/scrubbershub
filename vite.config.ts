@@ -28,6 +28,12 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: '/index.html',
+        // Marketing pages are separate static documents, not React app routes.
+        navigateFallbackDenylist: [
+          /^\/$/,
+          /^\/(features|pricing|industries|contact|thanks|terms|privacy)(\/|$)/,
+          /^\/site(\/|$)/,
+        ],
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         // never cache Supabase API / storage calls
         runtimeCaching: [],

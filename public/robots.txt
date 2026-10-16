@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /$
+Allow: /features
+Allow: /pricing
+Allow: /industries
+Allow: /contact
+Allow: /terms
+Allow: /privacy
+Allow: /site/
+Allow: /icons/
+Disallow: /
+
+Sitemap: https://proscrubhub.com/sitemap.xml

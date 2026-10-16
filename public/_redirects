@@ -1,0 +1,12 @@
+# ---- ScrubHub marketing site (keep these lines at the VERY TOP of _redirects) ----
+/              /site/index.html       200!
+/features      /site/features.html    200
+/pricing       /site/pricing.html     200
+/industries    /site/industries.html  200
+/contact       /site/contact.html     200
+/thanks        /site/thanks.html      200
+/terms         /site/terms.html       200
+/privacy       /site/privacy.html     200
+# ---- end marketing site ----
+
+/*             /index.html            200
