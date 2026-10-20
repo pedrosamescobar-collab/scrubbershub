@@ -345,3 +345,122 @@ export interface JobEquipment {
   created_at: string;
   equipment?: ClientEquipment | null;
 }
+
+// ---- Gym Operations module (supabase/migrations/20261019234552_eos_gym_operations.sql)
+export type GymPhase = 'pre_opening' | 'operating';
+export type GymReadinessStatus = 'todo' | 'blocked' | 'done';
+export type GymCalloutStatus = 'requested' | 'open' | 'covered';
+export type GymInspectionResult = 'pass' | 'rework' | 'critical';
+
+export interface GymContract {
+  id: string;
+  org_id: string;
+  client_id: string;
+  template_id: string | null;
+  name: string;
+  address: string;
+  site_key: string;
+  timezone: string;
+  phase: GymPhase;
+  scope_approved: boolean;
+  created_at: string;
+  client?: Pick<Client, 'id' | 'full_name' | 'email' | 'phone' | 'user_id'> | null;
+}
+
+export interface GymZone {
+  id: string;
+  org_id: string;
+  contract_id: string;
+  name: string;
+  cadence: string;
+  in_scope: boolean;
+  confirmed: boolean;
+  tasks: string[];
+  instructions: string;
+  template_id: string | null;
+}
+
+export interface GymReadiness {
+  id: string;
+  org_id: string;
+  contract_id: string;
+  label: string;
+  status: GymReadinessStatus;
+  note: string;
+}
+
+export interface GymTraining {
+  org_id: string;
+  employee_id: string;
+  orientation: boolean;
+  chemical: boolean;
+  valid_until: string;
+  updated_at: string;
+  employee?: Pick<Employee, 'id' | 'full_name' | 'color' | 'status' | 'role_title'> | null;
+}
+
+export interface GymRound {
+  id: string;
+  org_id: string;
+  contract_id: string;
+  job_id: string;
+  zone_id: string | null;
+  required_staff: number;
+  job?: Job | null;
+  zone?: Pick<GymZone, 'id' | 'name'> | null;
+  gym_inspections?: GymInspection[];
+  gym_callouts?: GymCallout[];
+}
+
+export interface GymCallout {
+  id: string;
+  org_id: string;
+  contract_id: string;
+  round_id: string;
+  employee_id: string;
+  replacement_id: string | null;
+  status: GymCalloutStatus;
+  created_at: string;
+  confirmed_at: string | null;
+  employee?: Pick<Employee, 'id' | 'full_name' | 'color'> | null;
+  replacement?: Pick<Employee, 'id' | 'full_name' | 'color'> | null;
+  round?: (Pick<GymRound, 'id' | 'job_id' | 'required_staff'> & { job?: Pick<Job, 'id' | 'service_name' | 'scheduled_start' | 'scheduled_end' | 'status'> | null; zone?: Pick<GymZone, 'id' | 'name'> | null }) | null;
+}
+
+export interface GymInspection {
+  id: string;
+  org_id: string;
+  contract_id: string;
+  round_id: string;
+  result: GymInspectionResult;
+  finding: string;
+  corrective_action: string;
+  due_at: string | null;
+  status: 'open' | 'resolved';
+  resolution: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  round?: (Pick<GymRound, 'id' | 'job_id'> & { job?: Pick<Job, 'id' | 'service_name' | 'scheduled_start' | 'status'> | null; zone?: Pick<GymZone, 'id' | 'name'> | null }) | null;
+}
+
+export interface GymReportSnapshot {
+  site: string;
+  address: string;
+  scheduled: number;
+  completed: number;
+  cancelled: number;
+  open_findings: number;
+  critical_findings: number;
+  passed_inspections: number;
+}
+
+export interface GymReport {
+  id: string;
+  org_id: string;
+  contract_id: string;
+  client_id: string;
+  period_start: string;
+  period_end: string;
+  snapshot: GymReportSnapshot;
+  created_at: string;
+}

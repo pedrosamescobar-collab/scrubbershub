@@ -604,3 +604,15 @@ html[data-sidebar="brand"] .sidebar .logo-box, html[data-sidebar="dark"] .sideba
 .font-option { font-size: 15px; }
 @media (max-width: 520px) { .theme-preview { grid-template-columns: 1fr; } .theme-preview .pv-side { flex-direction: row; overflow: hidden; } }
 html[data-sidebar="brand"] .sidebar .logo-box.fallback { background: color-mix(in srgb, var(--on-brand) 20%, transparent); color: var(--on-brand); }
+
+/* ---------- gym operations ---------- */
+.gym-tabs { display: flex; gap: 2px; background: var(--gray-soft); border-radius: calc(12px * var(--r, 1)); padding: 3px; overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+.gym-tabs a { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: calc(10px * var(--r, 1)); font-size: 14px; font-weight: 700; color: var(--text-2); text-decoration: none !important; white-space: nowrap; flex-shrink: 0; }
+.gym-tabs a.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+.gym-tabs a svg { width: 15px; height: 15px; }
+.gym-pick { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: calc(10px * var(--r, 1)); background: var(--surface); font: inherit; text-align: left; cursor: pointer; color: var(--text); }
+.gym-pick[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-softer); }
+.gym-pick:disabled { opacity: .55; cursor: not-allowed; }
+.gym-pick .box { width: 22px; height: 22px; border-radius: 7px; border: 2px solid var(--border-strong); display: grid; place-items: center; color: transparent; flex-shrink: 0; }
+.gym-pick[aria-pressed="true"] .box { background: var(--brand); border-color: var(--brand); color: #fff; }
+.gym-pick .box svg { width: 14px; height: 14px; }
