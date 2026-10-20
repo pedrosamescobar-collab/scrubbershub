@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Bell, Building2, ChevronRight, ClipboardList, CreditCard, LogOut, Star, HardHat, UserRound, UsersRound, Receipt, Package } from 'lucide-react';
+import { Bell, Building2, ChevronRight, ClipboardList, CreditCard, LogOut, Star, HardHat, UserRound, UsersRound, Receipt, Package, Dumbbell } from 'lucide-react';
 import { supabase, unwrap } from '@/lib/supabase';
 import { applyTheme, type Theme } from '@/lib/brand';
 import { BrandKitEditor } from './BrandKit';
@@ -212,6 +212,7 @@ export function MorePage() {
     { to: '/team', icon: UsersRound, label: 'Team', sub: 'Employees, crews and invites' },
     { to: '/billing/settings', icon: Receipt, label: 'Billing settings', sub: 'Tax, terms, reminders, online payments' },
     { to: '/inventory', icon: Package, label: 'Inventory', sub: 'Supplies, equipment, reorder list' },
+    { to: '/gym', icon: Dumbbell, label: 'Gym operations', sub: 'EōS site: plan, rounds, callouts, inspections' },
     { to: '/checklists', icon: ClipboardList, label: 'Checklists', sub: tp.checklistTemplatesSub },
     { to: '/reviews', icon: Star, label: 'Reviews', sub: 'Ratings and private feedback' },
     { to: '/notifications', icon: Bell, label: 'Notifications', sub: 'Reminders and activity' },

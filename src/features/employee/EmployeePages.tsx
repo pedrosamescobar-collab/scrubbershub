@@ -24,6 +24,7 @@ import { JobSuppliesCard } from '@/features/inventory/components';
 import { PriorityBadge } from '@/features/shared/priority';
 import { EquipmentSection } from '@/features/equipment/EquipmentSection';
 import { useTrade } from '@/features/shared/useTrade';
+import { GymRoundCard } from '@/features/gym/FieldAndPortal';
 
 /** Jobs assigned to me (directly or via one of my teams). Admins who also clean only see their own here. */
 function useMyJobs(from: Date, to: Date, key: string) {
@@ -288,6 +289,8 @@ function WorkJobView({ job, extras }: { job: Job; extras: ReturnType<typeof useJ
 
       {job.status === 'completed' && <Alert tone="success">Completed at {fmtTime(job.completed_at!)}. Thanks for your hard work!</Alert>}
       {job.status === 'cancelled' && <Alert tone="warn">This job was cancelled{job.cancel_reason ? `: ${job.cancel_reason}` : '.'}</Alert>}
+
+      <GymRoundCard job={job} />
 
       {!locked && (
         <div className="card card-pad clock-card">

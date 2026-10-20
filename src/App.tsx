@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import {
-  Home, CalendarDays, Users, UsersRound, Menu, Sun, ListChecks, Activity, UserRound, CalendarClock, MessageSquare, ClipboardList, Star, Settings, LayoutDashboard, Receipt, Package,
+  Home, CalendarDays, Users, UsersRound, Menu, Sun, ListChecks, Activity, UserRound, CalendarClock, MessageSquare, ClipboardList, Star, Settings, LayoutDashboard, Receipt, Package, Dumbbell, FileBarChart,
 } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
 import { HomeRedirect, PublicOnly, RequireAuth, RequireRole } from '@/auth/guards';
@@ -29,6 +29,8 @@ import { EstimatesPage, NewEstimatePage, EditEstimatePage, EstimateDetailPage } 
 import { PaymentsPage, ReportsPage } from '@/features/billing/MoneyPages';
 import { RecurringPage, CatalogPage, BillingSettingsPage } from '@/features/billing/SetupPages';
 import { PortalBilling, PortalInvoiceDetail, PortalEstimateDetail, PublicInvoicePage, PublicEstimatePage } from '@/features/portal/PortalBilling';
+import { GymLayout, GymOverview, GymPlanPage, GymTeamPage, GymRoundsPage, GymCalloutsPage, GymInspectionsPage, GymReportsPage } from '@/features/gym/GymOps';
+import { PortalReports } from '@/features/gym/FieldAndPortal';
 
 const ADMIN_NAV: NavItem[] = [
   { to: '/dashboard', label: 'Home', icon: Home },
@@ -37,6 +39,7 @@ const ADMIN_NAV: NavItem[] = [
   { to: '/billing', label: 'Billing', icon: Receipt },
   { to: '/team', label: 'Team', icon: UsersRound, desktopOnly: true },
   { to: '/inventory', label: 'Inventory', icon: Package, desktopOnly: true },
+  { to: '/gym', label: 'Gym site', icon: Dumbbell, desktopOnly: true },
   { to: '/checklists', label: 'Checklists', icon: ClipboardList, desktopOnly: true },
   { to: '/reviews', label: 'Reviews', icon: Star, desktopOnly: true },
   { to: '/settings', label: 'Settings', icon: Settings, desktopOnly: true },
@@ -55,6 +58,7 @@ const CLIENT_NAV: NavItem[] = [
   { to: '/portal/appointments', label: 'Appointments', icon: CalendarClock },
   { to: '/portal/billing', label: 'Billing', icon: Receipt },
   { to: '/portal/notes', label: 'Notes', icon: MessageSquare },
+  { to: '/portal/reports', label: 'Reports', icon: FileBarChart, desktopOnly: true },
   { to: '/portal/profile', label: 'Profile', icon: UserRound },
 ];
 
@@ -136,6 +140,15 @@ export function App() {
         <Route path="/billing/services" element={<CatalogPage />} />
         <Route path="/billing/reports" element={<ReportsPage />} />
         <Route path="/billing/settings" element={<BillingSettingsPage />} />
+        <Route path="/gym" element={<GymLayout />}>
+          <Route index element={<GymOverview />} />
+          <Route path="plan" element={<GymPlanPage />} />
+          <Route path="team" element={<GymTeamPage />} />
+          <Route path="rounds" element={<GymRoundsPage />} />
+          <Route path="callouts" element={<GymCalloutsPage />} />
+          <Route path="inspections" element={<GymInspectionsPage />} />
+          <Route path="reports" element={<GymReportsPage />} />
+        </Route>
       </Route>
 
       {/* Team member / employee (owners who also clean can use it too) */}
@@ -158,6 +171,7 @@ export function App() {
         <Route path="/portal/billing/invoices/:id" element={<PortalInvoiceDetail />} />
         <Route path="/portal/billing/estimates/:id" element={<PortalEstimateDetail />} />
         <Route path="/portal/notes" element={<PortalNotes />} />
+        <Route path="/portal/reports" element={<PortalReports />} />
         <Route path="/portal/notifications" element={<NotificationsPage title="Reminders" />} />
         <Route path="/portal/profile" element={<PortalProfile />} />
       </Route>

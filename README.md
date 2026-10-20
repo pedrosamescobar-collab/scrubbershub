@@ -18,7 +18,7 @@ Built with React 18 + TypeScript + Vite (installable PWA), Supabase (Postgres, A
 1. Create a project at [supabase.com](https://supabase.com).
 2. **SQL Editor → New query**, paste the whole of `supabase/migrations/0001_scrubhub_schema.sql`, and run it.
    This creates all tables, RLS policies, storage buckets (`logos`, `job-photos`), and server functions.
-3. **New query** again, paste the whole of `supabase/migrations/0002_billing.sql`, and run it (adds Billing).
+3. **New query** again, paste the whole of `supabase/migrations/0002_billing.sql`, and run it (adds Billing). Repeat for `0003` … `0007` in order.
    If your project already ran 0001 earlier, just run 0002 — it adds billing to every existing company.
 4. **Authentication → URL Configuration**
    - *Site URL*: your Netlify URL (e.g. `https://scrubhub.netlify.app`)
@@ -179,4 +179,34 @@ Public invoice / estimate pages and invite links use the same theme (`get_org_br
 - **Parts → invoice** — inventory items marked *Charge the client* with a client price are added to the job's invoice
   by `create_invoice_from_job`; parts logged later can be pulled onto a draft invoice (`add_job_parts_to_invoice`).
 
-`npm run test:db` runs 193 checks across all migrations, both trades, and cross-company isolation.
+---
+
+## Gym Operations module (migrations 0005 – 0007)
+
+**0005 — Zelle.** `billing_settings.zelle_recipient` / `zelle_name`; `zelle` is accepted by `record_payment` and shown on
+the client-facing invoice.
+
+**0006 — EōS Fitness site, 0007 — fixes.** An additive module for running a managed gym site (EōS Fitness · 54th Ave S,
+St. Petersburg) on top of native clients, jobs and checklists. Supervisor = owner/admin, cleaners = employees, the gym =
+a linked client. All rules live in two RPCs — `gym_setup(org, zones, readiness, client?)` and
+`gym_admin_action(contract, action, data)` — plus `gym_request_callout(round, employee)` for the crew. 0007 is required:
+it fixes `schedule` (ambiguous `v` made it unusable) and tightens checklist label limits to match `checklist_items`.
+
+Admin UI lives under **Gym site** (`/gym`, `src/features/gym/`):
+
+| Tab | What happens | RPC action |
+| --- | --- | --- |
+| *(setup)* | Review the proposed zones (`STARTER_ZONES`) and readiness list, pick or create the facility client | `gym_setup` |
+| Overview | Readiness items (to do / blocked / done + note), start daily operations once the plan is approved and readiness is complete | `readiness`, `phase` |
+| Zones & plan | Edit frequency, tasks and crew instructions per zone; include / confirm with the facility; approve the plan (snapshots a *Full facility round* template; any zone edit un-approves) | `zone`, `approve` |
+| Team training | Site orientation + chemical training with a review date; only cleared workers can be scheduled | `training` |
+| Rounds | Schedule 1–14 consecutive nights (full facility or one zone) → one job per night with the approved checklist; inspect started/completed rounds | `schedule`, `inspect` |
+| Callouts | A worker's availability request → approve (worker removed, round opens) → assign trained cover after they accept | `confirm_callout`, `cover` |
+| Inspections | Open findings (rework / critical) with corrective action and due date; close only after re-inspection | `resolve` |
+| Reports | Publish a period snapshot (rounds scheduled / completed, inspections passed, findings) to the gym's portal | `publish` |
+
+Field app: a gym round shows a **Gym round** card on the job (`GymRoundCard`) with the worker's training status and an
+*I can't make this round* button (no reason is collected). Client portal: **Reports** (`/portal/reports`) lists published
+reports, and the latest one is linked from the portal home.
+
+`npm run test:db` runs 255 checks across all migrations, both trades, the gym module, and cross-company isolation.

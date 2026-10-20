@@ -1,11 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BellRing, CalendarDays, ChevronRight, Globe, LogOut, Mail, MapPin, MessageSquare, Phone, Sparkles, Star, Users } from 'lucide-react';
+import { BellRing, CalendarDays, ChevronRight, FileBarChart, Globe, LogOut, Mail, MapPin, MessageSquare, Phone, Sparkles, Star, Users } from 'lucide-react';
 import { supabase, unwrap } from '@/lib/supabase';
 import { useAuth, useWorkspace } from '@/auth/AuthProvider';
 import type { AppNotification, Client, ClientNote, Job } from '@/lib/types';
-import { clientAddress, firstName, fmtAgo, fmtDateLong, fmtRelativeDay, fmtTime, fmtTimeRange, greeting } from '@/lib/format';
+import { clientAddress, firstName, fmtAgo, fmtDate, fmtDateLong, fmtRelativeDay, fmtTime, fmtTimeRange, greeting } from '@/lib/format';
 import { Button } from '@/components/ui/Button';
 import { TextArea, TextField, required, validate } from '@/components/ui/Form';
 import { Alert, EmptyState, QueryState, SkeletonList } from '@/components/ui/Feedback';
@@ -16,6 +16,7 @@ import { checklistProgress, useJob, useJobExtras } from '@/features/shared/api';
 import { AccountSection } from '@/features/shared/AccountPage';
 import { useTrade } from '@/features/shared/useTrade';
 import { EquipmentSection } from '@/features/equipment/EquipmentSection';
+import { useMyGymReports } from '@/features/gym/api';
 
 const PORTAL_SELECT = '*, job_checklist_items(id, is_required, completed_at), reviews(id, rating)';
 
@@ -73,6 +74,8 @@ export function PortalHome() {
   const next = jobs.data ? splitJobs(jobs.data).upcoming[0] : undefined;
   const crew = useCrew(next?.id);
   const toReview = (jobs.data ?? []).filter((j) => j.status === 'completed' && !(j.reviews ?? []).length).slice(-1)[0];
+  const reports = useMyGymReports();
+  const latestReport = reports.data?.[0];
 
   if (!ws.clientId) return <div className="card"><EmptyState title="Your client profile isn’t linked yet">Please use the invite link {ws.org.name} sent you.</EmptyState></div>;
 
@@ -118,6 +121,17 @@ export function PortalHome() {
           <Link to={`/portal/appointments/${toReview.id}`} className="card card-pad card-link row">
             <span className="avatar"><Star size={18} aria-hidden /></span>
             <span className="grow"><span className="strong">Rate your {fmtRelativeDay(toReview.scheduled_start).toLowerCase()} {tp.visit}</span><span className="muted small" style={{ display: 'block' }}>It takes 10 seconds and helps the team.</span></span>
+            <ChevronRight size={18} aria-hidden />
+          </Link>
+        </>
+      )}
+
+      {latestReport && (
+        <>
+          <SectionTitle>Service reports</SectionTitle>
+          <Link to="/portal/reports" className="card card-pad card-link row">
+            <span className="avatar"><FileBarChart size={18} aria-hidden /></span>
+            <span className="grow"><span className="strong">Latest report · {fmtDate(latestReport.period_start + 'T12:00:00')} – {fmtDate(latestReport.period_end + 'T12:00:00')}</span><span className="muted small" style={{ display: 'block' }}>{latestReport.snapshot.completed} of {latestReport.snapshot.scheduled} rounds completed · {latestReport.snapshot.open_findings} open finding{latestReport.snapshot.open_findings === 1 ? '' : 's'}</span></span>
             <ChevronRight size={18} aria-hidden />
           </Link>
         </>

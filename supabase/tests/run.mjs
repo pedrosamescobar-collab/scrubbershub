@@ -12,6 +12,9 @@ const migration = readFileSync(join(here, '../migrations/0001_scrubhub_schema.sq
 const billingMigration = readFileSync(join(here, '../migrations/0002_billing.sql'), 'utf8');
 const inventoryMigration = readFileSync(join(here, '../migrations/0003_inventory.sql'), 'utf8');
 const tradesMigration = readFileSync(join(here, '../migrations/0004_trades_theme_equipment.sql'), 'utf8');
+const zelleMigration = readFileSync(join(here, '../migrations/0005_zelle.sql'), 'utf8');
+const gymMigration = readFileSync(join(here, '../migrations/0006_eos_gym_operations.sql'), 'utf8');
+const gymFixMigration = readFileSync(join(here, '../migrations/0007_gym_fixes.sql'), 'utf8');
 
 const SUPABASE_STUBS = `
 create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
@@ -68,6 +71,9 @@ await db.exec(migration);
 await db.exec(billingMigration);
 await db.exec(inventoryMigration);
 await db.exec(tradesMigration);
+await db.exec(zelleMigration);
+await db.exec(gymMigration);
+await db.exec(gymFixMigration);
 await db.exec(GRANTS);
 for (const [k, id] of Object.entries(U)) {
   await db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, $2, $3)`,
@@ -359,7 +365,8 @@ await as(U.owner, async () => {
   ok((await q(`select public.run_recurring_billing($1) n`, [org]))[0].n === 1, 'recurring rule generated an invoice');
   const r = (await q(`select * from recurring_billing_rules`))[0];
   const ri = (await q(`select * from invoices where id = $1`, [r.last_invoice_id]))[0];
-  ok(ri.status === 'sent' && Number(ri.total) === 120 && r.next_run_date.getTime() - new Date(new Date().toISOString().slice(0, 10)).getTime() === 7 * 864e5,
+  const dbToday = (await q(`select current_date::text d`))[0].d; // compare against the database's own date (time zones differ late in the day)
+  ok(ri.status === 'sent' && Number(ri.total) === 120 && r.next_run_date.getTime() - new Date(dbToday).getTime() === 7 * 864e5,
     'recurring invoice auto-sent; next run moved 7 days ahead');
   ok((await q(`select public.run_recurring_billing($1) n`, [org]))[0].n === 0, 'recurring rule does not double-bill');
   await expectError(q(`update billing_settings set stripe_account_id = 'acct_evil'`), 'admin cannot redirect payouts to another Stripe account', 'server');
@@ -517,6 +524,125 @@ await as(U.owner, async () => {
   ok(lines.filter(l => l.description.startsWith('All-purpose cleaner')).length === 1 && lines.find(l => l.description.startsWith('All-purpose cleaner')).q === 3, 'parts logged later can be pulled onto the draft invoice (no duplicates)');
   ok(Number((await q(`select total from invoices where id = $1`, [invId]))[0].total) > 0, 'invoice totals recomputed');
 });
+
+// ---------------------------------------------------------------- Flow 9
+console.log('\nFlow 9 — gym operations (EōS site): plan → readiness → rounds → callouts → inspections → report');
+const gymZones = [
+  { name: 'Cardio floor', cadence: 'Nightly', in_scope: true, tasks: ['Wipe machines', 'Vacuum', 'Empty trash'], instructions: 'No spray on consoles' },
+  { name: 'Locker rooms', cadence: 'Nightly', in_scope: true, tasks: ['Scrub showers', 'Disinfect toilets'], instructions: '' },
+  { name: 'Pool deck', cadence: 'Nightly', in_scope: false, tasks: ['Squeegee deck'], instructions: '' },
+];
+const gymReadiness = ['Walkthrough with GM', 'COI delivered'];
+const gymDay = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10); // far enough out to avoid earlier jobs
+const act = (c, action, data) => q(`select public.gym_admin_action($1, $2, $3::jsonb) as r`, [c, action, JSON.stringify(data ?? {})]);
+await as(U.emp, async () => {
+  await expectError(q(`select public.gym_setup($1, $2::jsonb, $3::jsonb)`, [org, JSON.stringify(gymZones), JSON.stringify(gymReadiness)]), 'employee cannot set up the site', 'Supervisor');
+});
+const gym = await as(U.owner, async () => {
+  await expectError(q(`select public.gym_setup($1, '[]'::jsonb, $2::jsonb)`, [org, JSON.stringify(gymReadiness)]), 'setup rejects an empty zone list', 'Invalid operating plan');
+  const c = (await q(`select public.gym_setup($1, $2::jsonb, $3::jsonb) as id`, [org, JSON.stringify(gymZones), JSON.stringify(gymReadiness)]))[0].id;
+  ok(!!c, 'owner sets up the EōS site');
+  await expectError(q(`select public.gym_setup($1, $2::jsonb, $3::jsonb)`, [org, JSON.stringify(gymZones), JSON.stringify(gymReadiness)]), 'site cannot be set up twice', 'already set up');
+  const con = (await q(`select c.*, cl.full_name from gym_contracts c join clients cl on cl.id = c.client_id where c.id = $1`, [c]))[0];
+  ok(con.phase === 'pre_opening' && !con.scope_approved && con.full_name.startsWith('EōS'), 'contract starts in pre-opening with the gym as a client');
+  const zones = await q(`select * from gym_zones where contract_id = $1 order by name`, [c]);
+  ok(zones.length === 3 && zones.every(z => !z.confirmed) && zones.filter(z => z.in_scope).length === 2, '3 zones created, none confirmed, 2 in scope');
+  ok((await q(`select count(*)::int n from checklist_templates where org_id = $1 and name like 'EōS · %'`, [org]))[0].n === 3, 'a checklist template exists per zone');
+  ok((await q(`select count(*)::int n from checklist_items where template_id = $1`, [zones[0].template_id]))[0].n === 3, 'zone template holds its tasks');
+  ok((await q(`select count(*)::int n from gym_readiness where contract_id = $1`, [c]))[0].n === 2, 'readiness list created');
+
+  await expectError(act(c, 'phase', { phase: 'operating' }), 'cannot start operations before approval', 'Complete readiness');
+  await expectError(act(c, 'approve'), 'cannot approve with unconfirmed zones', 'Confirm every included zone');
+  await expectError(act(c, 'zone', { id: zones[0].id, cadence: 'Nightly', in_scope: true, confirmed: true, tasks: [], instructions: '' }), 'zone needs at least one task', 'Add 1 to 50');
+  for (const z of zones.filter(z => z.in_scope)) await act(c, 'zone', { id: z.id, cadence: z.cadence, in_scope: true, confirmed: true, tasks: z.tasks, instructions: z.instructions });
+  await act(c, 'approve');
+  const approved = (await q(`select * from gym_contracts where id = $1`, [c]))[0];
+  ok(approved.scope_approved && approved.template_id, 'plan approved and a full-facility template snapshot created');
+  ok((await q(`select count(*)::int n from checklist_sections where template_id = $1`, [approved.template_id]))[0].n === 2, 'full-facility template has one section per included zone');
+  await act(c, 'zone', { id: zones[0].id, cadence: 'Nightly + midday', in_scope: true, confirmed: true, tasks: ['Wipe machines', 'Vacuum'], instructions: '' });
+  ok(!(await q(`select scope_approved from gym_contracts where id = $1`, [c]))[0].scope_approved, 'editing a zone un-approves the plan');
+  await act(c, 'approve');
+  await expectError(act(c, 'phase', { phase: 'operating' }), 'readiness must be complete before operating', 'Complete readiness');
+  for (const r of await q(`select id from gym_readiness where contract_id = $1`, [c])) await act(c, 'readiness', { id: r.id, status: 'done', note: 'confirmed' });
+  await act(c, 'phase', { phase: 'operating' });
+  ok((await q(`select phase from gym_contracts where id = $1`, [c]))[0].phase === 'operating', 'site moves to daily operations');
+
+  await expectError(act(c, 'training', { employee_id: empId, orientation: true, chemical: true, valid_until: '2000-01-01' }), 'training review date cannot be in the past', 'not be in the past');
+  await act(c, 'training', { employee_id: empId, orientation: true, chemical: true, valid_until: '2099-01-01' });
+  await act(c, 'training', { employee_id: emp2Id, orientation: true, chemical: false, valid_until: '2099-01-01' });
+  const sched = { date: gymDay, time: '22:00', days: 2, duration: 240, required_staff: 1, zone_id: null };
+  await expectError(act(c, 'schedule', { ...sched, employee_ids: [emp2Id] }), 'untrained worker cannot be scheduled', 'orientation and chemical');
+  await expectError(act(c, 'schedule', { ...sched, employee_ids: [], required_staff: 1 }), 'cannot schedule without enough staff', 'enough trained staff');
+  await act(c, 'schedule', { ...sched, employee_ids: [empId] });
+  const rounds = await q(`select r.*, j.status, j.scheduled_start from gym_rounds r join jobs j on j.id = r.job_id where r.contract_id = $1 order by j.scheduled_start`, [c]);
+  ok(rounds.length === 2 && rounds.every(r => r.status === 'scheduled'), '2 nightly rounds scheduled as jobs');
+  ok((await q(`select count(*)::int n from job_checklist_items where job_id = $1`, [rounds[0].job_id]))[0].n === 4, 'round job carries the approved full-facility checklist');
+  await expectError(act(c, 'schedule', { ...sched, employee_ids: [empId] }), 'same worker cannot be double-booked', 'overlapping work');
+  await act(c, 'schedule', { ...sched, date: new Date(Date.now() + 40 * 864e5).toISOString().slice(0, 10), days: 1, zone_id: zones[0].id, employee_ids: [empId] });
+  ok((await q(`select count(*)::int n from gym_rounds where contract_id = $1 and zone_id = $2`, [c, zones[0].id]))[0].n === 1, 'a single-zone round can be scheduled');
+  await expectError(act(c, 'inspect', { round_id: rounds[0].id, result: 'pass' }), 'cannot inspect a round that has not started', 'started or completed');
+  return { c, rounds, zones };
+});
+const calloutId = await as(U.emp, async () => {
+  ok((await q(`select * from gym_contracts`)).length === 1, 'assigned worker can see the site');
+  ok((await q(`select * from gym_rounds`)).length === 3, 'assigned worker sees their rounds');
+  ok((await q(`select * from gym_zones`)).length === 0, 'worker does not see the zone plan');
+  const id = (await q(`select public.gym_request_callout($1, $2) as id`, [gym.rounds[0].id, empId]))[0].id;
+  ok(!!id, 'worker asks off a round');
+  await expectError(q(`select public.gym_request_callout($1, $2)`, [gym.rounds[0].id, empId]), 'cannot request twice for the same round', '');
+  await expectError(q(`select public.gym_request_callout($1, $2)`, [gym.rounds[1].id, emp2Id]), 'worker cannot request on behalf of a teammate', 'Not allowed');
+  await expectError(act(gym.c, 'confirm_callout', { id }), 'worker cannot approve their own request', 'Supervisor');
+  return id;
+});
+await as(U.emp2, async () => {
+  ok((await q(`select * from gym_contracts`)).length === 0, 'unassigned worker sees nothing about the site');
+  await expectError(q(`select public.gym_request_callout($1, $2)`, [gym.rounds[1].id, emp2Id]), 'unassigned worker cannot request off a round', '');
+});
+await as(U.owner, async () => {
+  await act(gym.c, 'confirm_callout', { id: calloutId });
+  ok((await q(`select status from gym_callouts where id = $1`, [calloutId]))[0].status === 'open', 'approved request opens the round for coverage');
+  ok((await q(`select count(*)::int n from job_assignments where job_id = $1`, [gym.rounds[0].job_id]))[0].n === 0, 'worker removed from the round');
+  await expectError(act(gym.c, 'cover', { id: calloutId, employee_id: emp2Id, confirmed: true }), 'replacement must be trained', 'orientation and chemical');
+  await act(gym.c, 'training', { employee_id: emp2Id, orientation: true, chemical: true, valid_until: '2099-01-01' });
+  await expectError(act(gym.c, 'cover', { id: calloutId, employee_id: emp2Id, confirmed: false }), 'cover requires the worker\'s acceptance', 'Confirm acceptance');
+  await act(gym.c, 'cover', { id: calloutId, employee_id: emp2Id, confirmed: true });
+  const cv = (await q(`select * from gym_callouts where id = $1`, [calloutId]))[0];
+  ok(cv.status === 'covered' && cv.replacement_id === emp2Id && cv.confirmed_at, 'round covered by a trained teammate');
+  ok((await q(`select employee_id from job_assignments where job_id = $1`, [gym.rounds[0].job_id]))[0].employee_id === emp2Id, 'replacement is assigned to the job');
+  await expectError(act(gym.c, 'cover', { id: calloutId, employee_id: empId, confirmed: true }), 'covered callout cannot be covered again', 'no longer open');
+});
+const inspId = await as(U.emp2, async () => {
+  await q(`select public.clock_in($1)`, [gym.rounds[0].job_id]);
+  ok((await q(`select status from jobs where id = $1`, [gym.rounds[0].job_id]))[0].status === 'in_progress', 'replacement clocks in to the round');
+  return null;
+});
+void inspId;
+const findingId = await as(U.owner, async () => {
+  await expectError(act(gym.c, 'inspect', { round_id: gym.rounds[0].id, result: 'rework', finding: '', corrective_action: '', due_at: null }), 'a rework result needs finding, action and due date', '');
+  await act(gym.c, 'inspect', { round_id: gym.rounds[0].id, result: 'rework', finding: 'Soap scum shower 3', corrective_action: 'Re-scrub tonight', due_at: new Date(Date.now() + 2 * 864e5).toISOString() });
+  await act(gym.c, 'inspect', { round_id: gym.rounds[0].id, result: 'pass' });
+  const rows = await q(`select * from gym_inspections where contract_id = $1 order by created_at`, [gym.c]);
+  ok(rows.length === 2 && rows[0].status === 'open' && rows[1].status === 'resolved', 'rework finding stays open; pass is resolved immediately');
+  await expectError(act(gym.c, 'resolve', { id: rows[0].id, rechecked: false, resolution: 'fixed' }), 'finding cannot close without re-inspection', 'Reinspect');
+  await expectError(act(gym.c, 'resolve', { id: rows[0].id, rechecked: true, resolution: '' }), 'finding cannot close without a resolution note', 'Record the correction');
+  await act(gym.c, 'resolve', { id: rows[0].id, rechecked: true, resolution: 'Re-scrubbed, re-inspected clean' });
+  ok((await q(`select status, resolved_at from gym_inspections where id = $1`, [rows[0].id]))[0].status === 'resolved', 'finding closed after re-inspection');
+  await expectError(act(gym.c, 'resolve', { id: rows[0].id, rechecked: true, resolution: 'again' }), 'closed finding cannot be closed twice', 'no longer open');
+  await expectError(act(gym.c, 'publish', { start: gymDay, end: '2000-01-01' }), 'report period must be valid', 'report period');
+  const rep = (await act(gym.c, 'publish', { start: gymDay, end: new Date(Date.now() + 45 * 864e5).toISOString().slice(0, 10) }))[0].r;
+  const snap = (await q(`select snapshot from gym_reports where id = $1`, [rep.id]))[0].snapshot;
+  ok(snap.scheduled === 3 && snap.completed === 0 && snap.site.startsWith('EōS'), 'published report counts the rounds scheduled in its period');
+  const yday = new Date(Date.now() - 864e5).toISOString().slice(0, 10), tmrw = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+  const rep2 = (await act(gym.c, 'publish', { start: yday, end: tmrw }))[0].r;
+  const snap2 = (await q(`select snapshot from gym_reports where id = $1`, [rep2.id]))[0].snapshot;
+  ok(snap2.passed_inspections === 1 && snap2.open_findings === 0 && snap2.critical_findings === 0, 'report counts inspections logged in its period');
+  return rows[0].id;
+});
+void findingId;
+await as(U.client, async () => {
+  ok((await q(`select * from gym_reports`)).length === 0, 'a residential client cannot see the gym\'s reports');
+});
+
 // ---------------------------------------------------------------- Tenant isolation
 console.log('\nTenant isolation — a second company');
 const org2 = await as(U.rival, async () => (await q(`select public.create_organization('Rival Maids') id`))[0].id);
@@ -542,6 +668,11 @@ await as(U.rival, async () => {
   ok((await q(`select * from client_equipment`)).length === 0, 'rival sees 0 equipment records');
   await expectError(q(`insert into client_equipment (org_id, client_id, kind) values ($1, $2, 'x')`, [org, clientId]), 'rival cannot add equipment to another company\'s client', 'row-level security');
   ok((await q(`update jobs set priority = 'emergency' where org_id = $1 returning id`, [org])).length === 0, 'rival cannot flag another company\'s jobs');
+  for (const t of ['gym_contracts', 'gym_zones', 'gym_readiness', 'gym_training', 'gym_rounds', 'gym_callouts', 'gym_inspections', 'gym_reports']) {
+    ok((await q(`select * from ${t}`)).length === 0, `rival sees 0 rows in ${t}`);
+  }
+  await expectError(q(`select public.gym_admin_action($1, 'approve', '{}'::jsonb)`, [gym.c]), 'rival cannot act on another company\'s gym site', 'Supervisor');
+  await expectError(q(`select public.gym_request_callout($1, $2)`, [gym.rounds[1].id, empId]), 'rival cannot request callouts on another company\'s rounds', 'not available');
   ok(!!rc, 'rival can still work inside their own company');
   await expectError(q(`select public.save_invoice($1::jsonb)`, [JSON.stringify({ org_id: org, client_id: clientId, items: [] })]), 'rival cannot create invoices in another company', 'Not allowed');
   await expectError(q(`select public.save_invoice($1::jsonb)`, [JSON.stringify({ org_id: org2, client_id: clientId, items: [] })]), 'rival cannot invoice another company\'s client', 'Client not found');
